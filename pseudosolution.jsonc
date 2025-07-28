@@ -1,0 +1,32 @@
+/*
+Potential flow:
+User sets location
+hit locationapi for council
+User selects Area
+Area save to storage.
+
+trashscannerapi
+User scans product barcode 
+We send Area & barcode to API
+
+/scan endpoint
+Gets Barcode from Product DB
+exit early if product doesn't exist
+Gets Bin information from Area DB
+exit early if bin information doesn't exsist
+
+calls ScanTrash()
+if ScanTrash() comes back false
+return 404 (Unable to scan product, please try another)
+else 
+
+Return JSON.stringfy(Object) 200
+
+ScanTrash(product: Product, bins: Bins[]): {ProductName: string, BinName: string, Material: string, BinDate: string, Bin Occurrence: number}
+loop through every bin
+If bin.Contents.includes( product.material.toLowerCase())
+
+return custom Object
+
+return false
+*/
