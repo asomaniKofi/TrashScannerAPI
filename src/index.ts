@@ -8,7 +8,10 @@ import { IProductDetails } from "./interfaces/IProductDetails";
 import Product, { IProduct } from "./Models/Product";
 import AreaSeeds, { IAreaSeeds } from "./Models/AreaSeeds";
 import { IScanResults } from "./interfaces/IScanResults";
-import { addWeeks, isAfter, format } from "date-fns";
+import { addWeeks, isAfter } from "date-fns";
+import { parse, format } from "date-fns";
+import { format as formatWithOrdinal } from "date-fns";
+import { enGB } from "date-fns/locale";
 
 dotenv.config();
 
@@ -17,15 +20,24 @@ const app: Application = express();
 const PORT = process.env.PORT || 4001;
 const NODE_ENV = process.env.NODE_ENV || "development";
 const MONGO_URL = process.env.MONGO_URL || "";
-
-app.use(cors());
 app.use(express.json());
-app.use(morgan("tiny"));
 
 mongoose
   .connect(MONGO_URL)
-  .then(() => console.log("✅ Connected to MongoDB"))
-  .catch((err) => console.error("❌ MongoDB connection error:", err));
+  .then(() => {
+    console.log("✅ Connected to MongoDB");
+
+    app.use(cors());
+    app.use(morgan("tiny"));
+
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running on port ${PORT} | Env: ${NODE_ENV}`);
+    });
+  })
+  .catch((err) => {
+    console.error("❌ MongoDB connection error:", err);
+    process.exit(1);
+  });
 
 // Global error handler
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
@@ -33,13 +45,15 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   res.status(500).json({ error: { message: err.message } });
 });
 
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT} | Env: ${NODE_ENV}`);
-});
-
 //http://localhost:4001/scan/
 app.post("/scan/", async (req: Request, res: Response) => {
+  if (!req.body) {
+    return res
+      .status(400)
+      .json({ error: "Something is wrong with the request, please try again" });
+  }
   const { area, barcode } = req.body;
+
   if (!area || !barcode) {
     return res
       .status(404)
@@ -48,21 +62,15 @@ app.post("/scan/", async (req: Request, res: Response) => {
 
   try {
     const product = await Product.findOne({ ProductID: Number(barcode) });
-    if (product) {
-      //Get Area
-      const areaData: IAreaSeeds | null = await AreaSeeds.findOne({
-        Name: `${area}`,
+    const areaData: IAreaSeeds | null = await AreaSeeds.findOne({
+      Name: `${area}`,
+    });
+    if (!product) return checkProduct(barcode, res);
+    if (!areaData)
+      return res.status(400).json({
+        error: `No bin information isn't available for ${area}, please try again later`,
       });
-      if (!areaData) {
-        return res.status(400).json({
-          error: `No bin information isn't available for ${area}, please try again later`,
-        });
-      } else {
-        getBinScanResult(product, areaData, res);
-      }
-    } else {
-      checkProduct(`${barcode}`, res);
-    }
+    getBinScanResult(product, areaData, res);
   } catch (error) {
     console.error(error);
     return res.status(500).send("Internal server error");
@@ -82,6 +90,9 @@ function getBinScanResult(product: IProduct, area: IAreaSeeds, res: Response) {
       return res.status(200).json(result);
     }
   }
+  return res.status(204).json({
+    error: `Unable to find a bin for ${product.ProductName} in ${area.Name}`,
+  });
 }
 
 function getLatestDate(startDate: string, intervalWeeks: number) {
@@ -91,49 +102,44 @@ function getLatestDate(startDate: string, intervalWeeks: number) {
   while (!isAfter(currentDate, now)) {
     currentDate = addWeeks(currentDate, intervalWeeks);
   }
+  const initialDate = format(currentDate, "dd-MM-yyyy");
+  const parsedDate = parse(initialDate, "dd-MM-yyyy", new Date());
 
-  return format(currentDate, "dd-MM-yyyy");
+  return format(parsedDate, "EEEE do MMMM yyyy");
 }
 
 async function checkProduct(barcode: string, res: Response) {
-  try {
-    const openFoodAPICheck = await axios.get(
-      `https://world.openfoodfacts.org/api/v2/product/${barcode}.json`
-    );
+  const urls = [
+    `https://world.openfoodfacts.org/api/v2/product/${barcode}.json`,
+    `https://world.openbeautyfacts.org/api/v2/product/${barcode}.json`,
+  ];
 
-    if (openFoodAPICheck.status == 200) {
-      const responseData = openFoodAPICheck.data as IProductDetails;
-      await Product.create({
-        ProductID: Number(barcode),
-        ProductName: responseData.product.product_name,
-        Material: responseData.product.packaging,
-      });
-      return res.status(205).json({
-        error:
-          "Product may not be available, please try again or scan another product",
-      });
-    } else {
-      const openBeautyAPICheck = await axios.get(
-        `https://world.openbeautyfacts.org/api/v2/product/${barcode}.json`
-      );
-      if (openBeautyAPICheck.status == 200) {
-        const responseData = openBeautyAPICheck.data as IProductDetails;
+  for (const url of urls) {
+    try {
+      const { data, status } = await axios.get(url);
+      const response = data as IProductDetails;
+      if (status === 200 && response.product) {
         await Product.create({
           ProductID: Number(barcode),
-          ProductName: responseData.product.product_name,
-          Material: responseData.product.packaging,
+          ProductName: response.product.product_name,
+          Material: response.product.packaging,
         });
+
         return res.status(205).json({
           error:
             "Product may not be available, please try again or scan another product",
         });
       }
+    } catch (_) {
+      return res.status(403).json({
+        error:
+          "Theres been an issue with this Product, please scan a different one",
+      });
     }
-  } catch (error: any) {
-    return res.status(404).json({
-      error: "Product isn't available, please scan a different one",
-    });
   }
+  return res.status(404).json({
+    error: "Product isn't available, please scan a different one",
+  });
 }
 
 export default app;

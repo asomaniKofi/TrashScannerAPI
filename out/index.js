@@ -21,26 +21,37 @@ const axios_1 = __importDefault(require("axios"));
 const Product_1 = __importDefault(require("./Models/Product"));
 const AreaSeeds_1 = __importDefault(require("./Models/AreaSeeds"));
 const date_fns_1 = require("date-fns");
+const date_fns_2 = require("date-fns");
 dotenv_1.default.config();
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 4001;
 const NODE_ENV = process.env.NODE_ENV || "development";
 const MONGO_URL = process.env.MONGO_URL || "";
-app.use((0, cors_1.default)());
 app.use(express_1.default.json());
-app.use((0, morgan_1.default)("tiny"));
 mongoose_1.default
     .connect(MONGO_URL)
-    .then(() => console.log("✅ Connected to MongoDB"))
-    .catch((err) => console.error("❌ MongoDB connection error:", err));
+    .then(() => {
+    console.log("✅ Connected to MongoDB");
+    app.use((0, cors_1.default)());
+    app.use((0, morgan_1.default)("tiny"));
+    app.listen(PORT, () => {
+        console.log(`🚀 Server running on port ${PORT} | Env: ${NODE_ENV}`);
+    });
+})
+    .catch((err) => {
+    console.error("❌ MongoDB connection error:", err);
+    process.exit(1);
+});
 app.use((err, req, res, next) => {
     console.error(err.stack);
     res.status(500).json({ error: { message: err.message } });
 });
-app.listen(PORT, () => {
-    console.log(`🚀 Server running on port ${PORT} | Env: ${NODE_ENV}`);
-});
 app.post("/scan/", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    if (!req.body) {
+        return res
+            .status(400)
+            .json({ error: "Something is wrong with the request, please try again" });
+    }
     const { area, barcode } = req.body;
     if (!area || !barcode) {
         return res
@@ -49,22 +60,16 @@ app.post("/scan/", (req, res) => __awaiter(void 0, void 0, void 0, function* () 
     }
     try {
         const product = yield Product_1.default.findOne({ ProductID: Number(barcode) });
-        if (product) {
-            const areaData = yield AreaSeeds_1.default.findOne({
-                Name: `${area}`,
+        const areaData = yield AreaSeeds_1.default.findOne({
+            Name: `${area}`,
+        });
+        if (!product)
+            return checkProduct(barcode, res);
+        if (!areaData)
+            return res.status(400).json({
+                error: `No bin information isn't available for ${area}, please try again later`,
             });
-            if (!areaData) {
-                return res.status(400).json({
-                    error: `No bin information isn't available for ${area}, please try again later`,
-                });
-            }
-            else {
-                getBinScanResult(product, areaData, res);
-            }
-        }
-        else {
-            checkProduct(`${barcode}`, res);
-        }
+        getBinScanResult(product, areaData, res);
     }
     catch (error) {
         console.error(error);
@@ -84,6 +89,9 @@ function getBinScanResult(product, area, res) {
             return res.status(200).json(result);
         }
     }
+    return res.status(204).json({
+        error: `Unable to find a bin for ${product.ProductName} in ${area.Name}`,
+    });
 }
 function getLatestDate(startDate, intervalWeeks) {
     let currentDate = new Date(startDate);
@@ -91,43 +99,40 @@ function getLatestDate(startDate, intervalWeeks) {
     while (!(0, date_fns_1.isAfter)(currentDate, now)) {
         currentDate = (0, date_fns_1.addWeeks)(currentDate, intervalWeeks);
     }
-    return (0, date_fns_1.format)(currentDate, "dd-MM-yyyy");
+    const initialDate = (0, date_fns_2.format)(currentDate, "dd-MM-yyyy");
+    const parsedDate = (0, date_fns_2.parse)(initialDate, "dd-MM-yyyy", new Date());
+    return (0, date_fns_2.format)(parsedDate, "EEEE do MMMM yyyy");
 }
 function checkProduct(barcode, res) {
     return __awaiter(this, void 0, void 0, function* () {
-        try {
-            const openFoodAPICheck = yield axios_1.default.get(`https://world.openfoodfacts.org/api/v2/product/${barcode}.json`);
-            if (openFoodAPICheck.status == 200) {
-                const responseData = openFoodAPICheck.data;
-                yield Product_1.default.create({
-                    ProductID: Number(barcode),
-                    ProductName: responseData.product.product_name,
-                    Material: responseData.product.packaging,
-                });
-                return res.status(205).json({
-                    error: "Product may not be available, please try again or scan another product",
-                });
-            }
-            else {
-                const openBeautyAPICheck = yield axios_1.default.get(`https://world.openbeautyfacts.org/api/v2/product/${barcode}.json`);
-                if (openBeautyAPICheck.status == 200) {
-                    const responseData = openBeautyAPICheck.data;
+        const urls = [
+            `https://world.openfoodfacts.org/api/v2/product/${barcode}.json`,
+            `https://world.openbeautyfacts.org/api/v2/product/${barcode}.json`,
+        ];
+        for (const url of urls) {
+            try {
+                const { data, status } = yield axios_1.default.get(url);
+                const response = data;
+                if (status === 200 && response.product) {
                     yield Product_1.default.create({
                         ProductID: Number(barcode),
-                        ProductName: responseData.product.product_name,
-                        Material: responseData.product.packaging,
+                        ProductName: response.product.product_name,
+                        Material: response.product.packaging,
                     });
                     return res.status(205).json({
                         error: "Product may not be available, please try again or scan another product",
                     });
                 }
             }
+            catch (_) {
+                return res.status(403).json({
+                    error: "Theres been an issue with this Product, please scan a different one",
+                });
+            }
         }
-        catch (error) {
-            return res.status(404).json({
-                error: "Product isn't available, please scan a different one",
-            });
-        }
+        return res.status(404).json({
+            error: "Product isn't available, please scan a different one",
+        });
     });
 }
 exports.default = app;
