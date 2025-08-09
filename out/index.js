@@ -28,12 +28,12 @@ const PORT = process.env.PORT || 4001;
 const NODE_ENV = process.env.NODE_ENV || "development";
 const MONGO_URL = process.env.MONGO_URL || "";
 app.use(express_1.default.json());
+app.use((0, cors_1.default)());
+app.use((0, morgan_1.default)("tiny"));
 mongoose_1.default
     .connect(MONGO_URL)
     .then(() => {
     console.log("✅ Connected to MongoDB");
-    app.use((0, cors_1.default)());
-    app.use((0, morgan_1.default)("tiny"));
     app.listen(PORT, () => {
         console.log(`🚀 Server running on port ${PORT} | Env: ${NODE_ENV}`);
     });

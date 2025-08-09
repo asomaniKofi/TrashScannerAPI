@@ -10,8 +10,6 @@ import AreaSeeds, { IAreaSeeds } from "./Models/AreaSeeds";
 import { IScanResults } from "./interfaces/IScanResults";
 import { addWeeks, isAfter } from "date-fns";
 import { parse, format } from "date-fns";
-import { format as formatWithOrdinal } from "date-fns";
-import { enGB } from "date-fns/locale";
 
 dotenv.config();
 
@@ -21,14 +19,13 @@ const PORT = process.env.PORT || 4001;
 const NODE_ENV = process.env.NODE_ENV || "development";
 const MONGO_URL = process.env.MONGO_URL || "";
 app.use(express.json());
+app.use(cors());
+app.use(morgan("tiny"));
 
 mongoose
   .connect(MONGO_URL)
   .then(() => {
     console.log("✅ Connected to MongoDB");
-
-    app.use(cors());
-    app.use(morgan("tiny"));
 
     app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT} | Env: ${NODE_ENV}`);
