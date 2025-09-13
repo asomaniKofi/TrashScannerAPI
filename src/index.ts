@@ -18,6 +18,7 @@ const app: Application = express();
 const PORT = process.env.PORT || 4001;
 const NODE_ENV = process.env.NODE_ENV || "development";
 const MONGO_URL = process.env.MONGO_URL || "";
+
 app.use(express.json());
 app.use(cors());
 app.use(morgan("tiny"));
@@ -26,16 +27,14 @@ mongoose
   .connect(MONGO_URL)
   .then(() => {
     console.log("✅ Connected to MongoDB");
-
-    app.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT} | Env: ${NODE_ENV}`);
-    });
   })
   .catch((err) => {
     console.error("❌ MongoDB connection error:", err);
     process.exit(1);
   });
-
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT} | Env: ${NODE_ENV}`);
+});
 // Global error handler
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   console.error(err.stack);
@@ -119,7 +118,7 @@ async function checkProduct(barcode: string, res: Response) {
         await Product.create({
           ProductID: Number(barcode),
           ProductName: response.product.product_name,
-          Material: response.product.packaging,
+          Material: response.product.packaging || "tetrapack",
         });
 
         return res.status(205).json({

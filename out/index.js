@@ -34,13 +34,13 @@ mongoose_1.default
     .connect(MONGO_URL)
     .then(() => {
     console.log("✅ Connected to MongoDB");
-    app.listen(PORT, () => {
-        console.log(`🚀 Server running on port ${PORT} | Env: ${NODE_ENV}`);
-    });
 })
     .catch((err) => {
     console.error("❌ MongoDB connection error:", err);
     process.exit(1);
+});
+app.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT} | Env: ${NODE_ENV}`);
 });
 app.use((err, req, res, next) => {
     console.error(err.stack);
@@ -113,11 +113,12 @@ function checkProduct(barcode, res) {
             try {
                 const { data, status } = yield axios_1.default.get(url);
                 const response = data;
+                debugger;
                 if (status === 200 && response.product) {
                     yield Product_1.default.create({
                         ProductID: Number(barcode),
                         ProductName: response.product.product_name,
-                        Material: response.product.packaging,
+                        Material: response.product.packaging || "tetrapack",
                     });
                     return res.status(205).json({
                         error: "Product may not be available, please try again or scan another product",
